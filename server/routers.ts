@@ -3,12 +3,12 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { createRagDocument, deleteOwnedRagDocument, getOwnedRagDocument, listDemoStates, listRagDocuments, listSearchableChunks, setDemoState } from "./db";
+import { createRagDocument, deleteOwnedRagDocument, deleteRagDocument, getOwnedRagDocument, getRagDocument, listDemoStates, listRagDocuments, listSearchableChunks, setDemoState } from "./db";
 import { composeSearchCorpus, DEMO_DOCUMENT_IDS, resolveDemoStates } from "./rag/demoState";
 import { parseFinanceDocument } from "./rag/parser";
 import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
 import { createAsciiStorageKey, getSupportedExtension } from "./rag/storageKey";
-import { storageDelete, storagePut } from "./storage";
+import { storagePut } from "./storage";
 
 const base64FileSchema = z.object({
   fileName: z.string().min(1).max(255),
@@ -103,16 +103,22 @@ export const appRouter = router({
       return { documentId, parser: parsed.parser, sections: parsed.sections, chunkCount: chunks.length, parsingScore, parsingDuration: formatDuration(parsingDurationMs), embeddingScore, embeddingCoverage, embeddingDuration: formatDuration(embeddingDurationMs) };
     }),
     deleteDocument: protectedProcedure.input(z.object({ documentId: z.coerce.number().int().positive() })).mutation(async ({ input, ctx }) => {
-      const document = await getOwnedRagDocument(input.documentId, ctx.user.id);
+      const isAdmin = ctx.user.role === "admin";
+      const document = isAdmin ? await getRagDocument(input.documentId) : await getOwnedRagDocument(input.documentId, ctx.user.id);
       if (!document) throw new Error("삭제할 문서를 찾을 수 없거나 권한이 없습니다.");
-      await storageDelete(document.storageKey);
-      await deleteOwnedRagDocument(document.id, ctx.user.id);
-      return { success: true, documentId: document.id } as const;
+      if (isAdmin) await deleteRagDocument(document.id);
+      else await deleteOwnedRagDocument(document.id, ctx.user.id);
+      return { success: true, documentId: document.id, storageDetached: true } as const;
     }),
     setDemoEnabled: protectedProcedure.input(z.object({ demoId: z.enum(DEMO_DOCUMENT_IDS), enabled: z.boolean() })).mutation(async ({ input, ctx }) => {
       if (ctx.user.role !== "admin") throw new Error("데모 자료 상태는 관리자만 변경할 수 있습니다.");
       await setDemoState(input.demoId, input.enabled);
       return { success: true, ...input } as const;
+    }),
+    enableAllDemos: protectedProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("데모 자료 상태는 관리자만 변경할 수 있습니다.");
+      await Promise.all(DEMO_DOCUMENT_IDS.map((demoId) => setDemoState(demoId, true)));
+      return { success: true, enabledCount: DEMO_DOCUMENT_IDS.length } as const;
     }),
   }),
 });

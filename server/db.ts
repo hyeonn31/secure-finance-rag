@@ -129,10 +129,25 @@ export async function getOwnedRagDocument(documentId: number, ownerId: number) {
   return result[0];
 }
 
+export async function getRagDocument(documentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("문서 저장소 데이터베이스에 연결할 수 없습니다.");
+  const result = await db.select().from(ragDocuments).where(eq(ragDocuments.id, documentId)).limit(1);
+  return result[0];
+}
+
 export async function deleteOwnedRagDocument(documentId: number, ownerId: number) {
   const db = await getDb();
   if (!db) throw new Error("문서 저장소 데이터베이스에 연결할 수 없습니다.");
   await db.delete(ragChunks).where(eq(ragChunks.documentId, documentId));
   const result = await db.delete(ragDocuments).where(and(eq(ragDocuments.id, documentId), eq(ragDocuments.ownerId, ownerId)));
   if (result[0].affectedRows !== 1) throw new Error("삭제할 문서를 찾을 수 없거나 권한이 없습니다.");
+}
+
+export async function deleteRagDocument(documentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("문서 저장소 데이터베이스에 연결할 수 없습니다.");
+  await db.delete(ragChunks).where(eq(ragChunks.documentId, documentId));
+  const result = await db.delete(ragDocuments).where(eq(ragDocuments.id, documentId));
+  if (result[0].affectedRows !== 1) throw new Error("삭제할 문서를 찾을 수 없습니다.");
 }

@@ -299,13 +299,21 @@ export function buildGroundedAnswer(query: string, candidates: ReturnType<typeof
   if (!sources.length) {
     return {
       answer: `질의 **“${query}”**와 직접 연결되는 후보 청크를 현재 사내 문서에서 찾지 못했습니다. 근거가 부족하므로 답변을 생성하지 않습니다.\n\n다른 업무 용어를 사용하거나, 해당 주제의 문서를 등록한 뒤 다시 검색해 주세요.`,
+      summary: { conclusion: "근거 부족", bullets: [], citations: [] as Array<{ label: string; documentTitle: string; ordinal: number }> },
       groundedness: 0,
       citationCoverage: 0,
     };
   }
-  const keyPoints = sources.map((source, index) => `**${index + 1}. ${source.documentTitle} · 청크 ${source.ordinal + 1}** — ${source.content}`).join("\n\n");
+  const concise = (content: string, limit = 132) => {
+    const firstSentence = content.split(/(?<=[.!?]|다\.)\s+/)[0]?.trim() || content;
+    return firstSentence.length > limit ? `${firstSentence.slice(0, limit - 1).trim()}…` : firstSentence;
+  };
+  const bullets = sources.map((source, index) => ({ label: `[${index + 1}]`, text: concise(source.content), documentTitle: source.documentTitle, ordinal: source.ordinal }));
+  const conclusion = concise(sources[0].content, 160);
+  const evidence = bullets.map((bullet) => `${bullet.label} ${bullet.text}`).join("\n");
   return {
-    answer: `질의 **“${query}”**에 대해 사내 후보 청크 ${sources.length}개만을 근거로 정리했습니다.\n\n${keyPoints}\n\n> 이 답변은 선택된 후보 컨텍스트 외의 문서 내용이나 외부 지식을 사용하지 않습니다.`,
+    answer: `**핵심 요약**\n${conclusion}\n\n**근거**\n${evidence}\n\n> 필요하면 오른쪽 후보 근거에서 원문 청크를 펼쳐 확인하세요.`,
+    summary: { conclusion, bullets, citations: bullets.map(({ label, documentTitle, ordinal }) => ({ label, documentTitle, ordinal })) },
     groundedness: calculateGenerationScore(sources.length, sources.length ? 100 : 0),
     citationCoverage: sources.length ? 100 : 0,
   };

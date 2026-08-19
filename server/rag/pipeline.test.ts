@@ -51,4 +51,12 @@ describe("금융 RAG 파이프라인", () => {
     const candidates = filterGroundedCandidates(hybridSearch("증여로 세금 납부 책임은 언제 발생해", DEMO_CHUNKS, 3));
     expect(candidates[0]?.documentTitle).toContain("증여세");
   });
+
+  it("답변을 핵심 결론과 제한된 근거 문장으로 압축한다", () => {
+    const candidates = filterGroundedCandidates(hybridSearch("증여세 납세의무 성립시기", DEMO_CHUNKS, 3));
+    const result = buildGroundedAnswer("증여세 납세의무 성립시기", candidates);
+    expect(result.summary.conclusion.length).toBeLessThanOrEqual(160);
+    expect(result.summary.bullets.length).toBeLessThanOrEqual(3);
+    expect(result.answer).not.toContain("청크 1** —");
+  });
 });

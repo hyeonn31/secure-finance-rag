@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { InsertUser, ragChunks, ragDemoStates, ragDocuments, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { shouldBootstrapAdmin } from "./auth/rolePolicy";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -29,8 +30,12 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet[field] = user[field] ?? null;
     }
   });
-  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
-  updateSet.role = values.role;
+  values.role = user.role ?? (shouldBootstrapAdmin(user.openId, ENV.ownerOpenId) ? "admin" : "user");
+  // Keep an administrator's explicit role on ordinary sign-in refreshes.
+  // Role is only changed by an explicit admin action or for the configured owner.
+  if (user.role !== undefined || shouldBootstrapAdmin(user.openId, ENV.ownerOpenId)) {
+    updateSet.role = values.role;
+  }
   await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
@@ -39,6 +44,35 @@ export async function getUserByOpenId(openId: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result[0];
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+export async function listManagedUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, loginMethod: users.loginMethod, lastSignedIn: users.lastSignedIn, createdAt: users.createdAt })
+    .from(users)
+    .orderBy(desc(users.lastSignedIn));
+}
+
+export async function setManagedUserRole(userId: number, role: "admin" | "user") {
+  const db = await getDb();
+  if (!db) throw new Error("사용자 데이터베이스에 연결할 수 없습니다.");
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function countAdminUsers() {
+  const db = await getDb();
+  if (!db) return 0;
+  const all = await db.select({ role: users.role }).from(users);
+  return all.filter((user) => user.role === "admin").length;
 }
 
 type CreateDocumentInput = {

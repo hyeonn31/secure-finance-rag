@@ -3,12 +3,13 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { createRagDocument, deleteOwnedRagDocument, deleteRagDocument, getOwnedRagDocument, getRagDocument, listDemoStates, listRagDocuments, listSearchableChunks, setDemoState } from "./db";
+import { countAdminUsers, createRagDocument, deleteOwnedRagDocument, deleteRagDocument, getOwnedRagDocument, getRagDocument, getUserById, listDemoStates, listManagedUsers, listRagDocuments, listSearchableChunks, setDemoState, setManagedUserRole } from "./db";
 import { composeSearchCorpus, DEMO_DOCUMENT_IDS, resolveDemoStates } from "./rag/demoState";
 import { parseFinanceDocument } from "./rag/parser";
 import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, filterGroundedCandidates, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
 import { createAsciiStorageKey, getSupportedExtension } from "./rag/storageKey";
 import { storagePut } from "./storage";
+import { validateRoleChange } from "./auth/rolePolicy";
 
 const base64FileSchema = z.object({
   fileName: z.string().min(1).max(255),
@@ -23,6 +24,18 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => {
       ctx.res.clearCookie(COOKIE_NAME, { ...getSessionCookieOptions(ctx.req), maxAge: -1 });
       return { success: true } as const;
+    }),
+    users: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("사용자 권한 관리는 관리자만 열 수 있습니다.");
+      return listManagedUsers();
+    }),
+    setRole: protectedProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(["admin", "user"]) })).mutation(async ({ input, ctx }) => {
+      const target = await getUserById(input.userId);
+      if (!target) throw new Error("대상 사용자를 찾을 수 없습니다.");
+      const policyError = validateRoleChange({ actorRole: ctx.user.role, actorId: ctx.user.id, targetId: target.id, targetRole: target.role, nextRole: input.role, adminCount: await countAdminUsers() });
+      if (policyError) throw new Error(policyError);
+      await setManagedUserRole(input.userId, input.role);
+      return { success: true, userId: input.userId, role: input.role } as const;
     }),
   }),
   rag: router({

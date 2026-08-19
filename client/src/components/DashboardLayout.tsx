@@ -1,12 +1,13 @@
 import { cn } from "@/lib/utils";
-import { BarChart3, Database, Search, ShieldCheck } from "lucide-react";
+import { BarChart3, Database, Search, ShieldCheck, UsersRound } from "lucide-react";
 
-export type DashboardSection = "overview" | "documents" | "search";
+export type DashboardSection = "overview" | "documents" | "search" | "access";
 
 const navigation: Array<{ id: DashboardSection; label: string; code: string; icon: typeof BarChart3 }> = [
   { id: "overview", label: "운영 현황", code: "01", icon: BarChart3 },
   { id: "documents", label: "문서 레지스트리", code: "02", icon: Database },
   { id: "search", label: "검색 검증", code: "03", icon: Search },
+  { id: "access", label: "계정 · 권한", code: "04", icon: UsersRound },
 ];
 
 export default function DashboardLayout({ children, activeSection, onNavigate }: { children: React.ReactNode; activeSection: DashboardSection; onNavigate: (section: DashboardSection) => void }) {
@@ -33,7 +34,7 @@ export default function DashboardLayout({ children, activeSection, onNavigate }:
           <div className="mt-4 flex items-center gap-2 text-[10px] font-medium text-[#A7D7B7]"><span className="size-1.5 rounded-full bg-[#7BC796]" /> INTRANET READY</div>
         </div>
       </aside>
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-3 border-t border-[#D7DFDC] bg-white/95 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-[#D7DFDC] bg-white/95 backdrop-blur lg:hidden">
         {navigation.map((item) => { const active = item.id === activeSection; return <button key={item.id} onClick={() => onNavigate(item.id)} className={cn("flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium", active ? "bg-[#182522] text-white" : "text-[#62726B]")}><item.icon className="size-4" />{item.label}</button>; })}
       </nav>
       <main className="min-h-screen pb-16 lg:pl-[244px] lg:pb-0">{children}</main>

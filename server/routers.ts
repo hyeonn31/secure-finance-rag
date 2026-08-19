@@ -6,7 +6,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { createRagDocument, deleteOwnedRagDocument, deleteRagDocument, getOwnedRagDocument, getRagDocument, listDemoStates, listRagDocuments, listSearchableChunks, setDemoState } from "./db";
 import { composeSearchCorpus, DEMO_DOCUMENT_IDS, resolveDemoStates } from "./rag/demoState";
 import { parseFinanceDocument } from "./rag/parser";
-import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
+import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, filterGroundedCandidates, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
 import { createAsciiStorageKey, getSupportedExtension } from "./rag/storageKey";
 import { storagePut } from "./storage";
 
@@ -55,7 +55,8 @@ export const appRouter = router({
         content: chunk.content,
         embedding: chunk.embedding,
       }));
-      const candidates = hybridSearch(input.query, composeSearchCorpus(DEMO_CHUNKS, privateChunks, demoStates), 3);
+      const rankedCandidates = hybridSearch(input.query, composeSearchCorpus(DEMO_CHUNKS, privateChunks, demoStates), 3);
+      const candidates = filterGroundedCandidates(rankedCandidates);
       const retrievalDurationMs = performance.now() - retrieveStartedAt;
       const retrievalScore = calculateRetrievalScore(candidates);
       const generateStartedAt = performance.now();
@@ -65,6 +66,7 @@ export const appRouter = router({
       return {
         ...response,
         candidates,
+        retrievalDecision: candidates.length ? "grounded" : "insufficient_evidence",
         stages,
         improvement: buildImprovementGuide(stages),
         timing: { retrieve: formatDuration(retrievalDurationMs), generate: formatDuration(generationDurationMs), total: formatDuration(retrievalDurationMs + generationDurationMs) },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, hybridSearch, DEMO_CHUNKS } from "./pipeline";
+import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, filterGroundedCandidates, hybridSearch, DEMO_CHUNKS } from "./pipeline";
 
 describe("금융 RAG 파이프라인", () => {
   it("문장을 겹침을 갖는 검색 단위로 분할한다", () => {
@@ -27,5 +27,13 @@ describe("금융 RAG 파이프라인", () => {
     const stages = buildStages({ parse: 93, embed: 92 }, { parsingDurationMs: 642, embeddingDurationMs: 81, embeddingCoverage: 100 });
     expect(stages[0]).toMatchObject({ score: 93, duration: "642ms" });
     expect(stages[1]).toMatchObject({ score: 92, metric: "커버리지 100%" });
+  });
+
+  it("무관한 질의는 우연한 벡터 유사도를 근거로 답변하지 않는다", () => {
+    const content = "기업여신 심사 시 담보인정비율과 재무등급을 평가한다.";
+    const chunks = [{ id: "credit-1", documentTitle: "여신 기준", ordinal: 0, content, embedding: createEmbedding(content) }];
+    const candidates = filterGroundedCandidates(hybridSearch("이탈리아 피자 도우 발효 레시피", chunks, 3));
+    expect(candidates).toHaveLength(0);
+    expect(buildGroundedAnswer("이탈리아 피자 도우 발효 레시피", candidates).groundedness).toBe(0);
   });
 });

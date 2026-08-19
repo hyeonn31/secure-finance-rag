@@ -177,11 +177,23 @@ export function hybridSearch(query: string, chunks: SearchChunk[], limit = 3) {
       }, 0);
       const keywordScore = Math.min(100, Math.round((bm25Raw / Math.max(queryTokens.length, 1)) * 60));
       const semanticScore = Math.max(0, Math.min(100, Math.round(cosineSimilarity(queryEmbedding, chunk.embedding) * 100)));
+      const matchedTerms = queryTokens.filter((term) => frequency.has(term));
+      const lexicalMatchCount = new Set(matchedTerms).size;
       const hybridScore = Math.round(keywordScore * 0.46 + semanticScore * 0.54);
-      return { ...chunk, keywordScore, semanticScore, hybridScore };
+      return { ...chunk, keywordScore, semanticScore, hybridScore, matchedTerms: Array.from(new Set(matchedTerms)), lexicalMatchCount };
     })
     .sort((left, right) => right.hybridScore - left.hybridScore)
     .slice(0, limit);
+}
+
+/**
+ * A hash-based demo embedding can produce accidental similarity for unrelated
+ * text. Require an observable lexical signal before any chunk can reach
+ * generation. In production this gate should be calibrated against a labelled
+ * evaluation set alongside the embedding reranker.
+ */
+export function filterGroundedCandidates(candidates: ReturnType<typeof hybridSearch>) {
+  return candidates.filter((candidate) => candidate.lexicalMatchCount > 0 && candidate.keywordScore >= 4 && candidate.hybridScore >= 8);
 }
 
 export function calculateRetrievalScore(results: Array<{ hybridScore: number }>) {
@@ -242,6 +254,13 @@ export function buildImprovementGuide(stages: PipelineStage[]) {
 
 export function buildGroundedAnswer(query: string, candidates: ReturnType<typeof hybridSearch>) {
   const sources = candidates.slice(0, 3);
+  if (!sources.length) {
+    return {
+      answer: `질의 **“${query}”**와 직접 연결되는 후보 청크를 현재 사내 문서에서 찾지 못했습니다. 근거가 부족하므로 답변을 생성하지 않습니다.\n\n다른 업무 용어를 사용하거나, 해당 주제의 문서를 등록한 뒤 다시 검색해 주세요.`,
+      groundedness: 0,
+      citationCoverage: 0,
+    };
+  }
   const keyPoints = sources.map((source, index) => `**${index + 1}. ${source.documentTitle} · 청크 ${source.ordinal + 1}** — ${source.content}`).join("\n\n");
   return {
     answer: `질의 **“${query}”**에 대해 사내 후보 청크 ${sources.length}개만을 근거로 정리했습니다.\n\n${keyPoints}\n\n> 이 답변은 선택된 후보 컨텍스트 외의 문서 내용이나 외부 지식을 사용하지 않습니다.`,

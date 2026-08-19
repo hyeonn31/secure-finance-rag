@@ -1,11 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import { InsertUser, ragChunks, ragDocuments, users } from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -19,74 +18,94 @@ export async function getDb() {
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
+  if (!db) return;
+  const values: InsertUser = { openId: user.openId, lastSignedIn: user.lastSignedIn ?? new Date() };
+  const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn };
+  (["name", "email", "loginMethod"] as const).forEach((field) => {
+    if (user[field] !== undefined) {
+      values[field] = user[field] ?? null;
+      updateSet[field] = user[field] ?? null;
     }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  });
+  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user");
+  updateSet.role = values.role;
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-// TODO: add feature queries here as your schema grows.
+type CreateDocumentInput = {
+  ownerId: number;
+  fileName: string;
+  fileType: string;
+  storageKey: string;
+  storageUrl: string;
+  extractedCharacters: number;
+  parsingScore: number;
+  parsingDurationMs: number;
+  embeddingScore: number;
+  embeddingCoverage: number;
+  embeddingDurationMs: number;
+  chunks: Array<{ content: string; charStart: number; charEnd: number; embedding: number[] }>;
+};
+
+export async function createRagDocument(input: CreateDocumentInput) {
+  const db = await getDb();
+  if (!db) throw new Error("문서 저장소 데이터베이스에 연결할 수 없습니다.");
+  const insert = await db.insert(ragDocuments).values({
+    ownerId: input.ownerId,
+    fileName: input.fileName,
+    fileType: input.fileType,
+    storageKey: input.storageKey,
+    storageUrl: input.storageUrl,
+    status: "ready",
+    extractedCharacters: input.extractedCharacters,
+    chunkCount: input.chunks.length,
+    parsingScore: input.parsingScore,
+    parsingDurationMs: input.parsingDurationMs,
+    embeddingScore: input.embeddingScore,
+    embeddingCoverage: input.embeddingCoverage,
+    embeddingDurationMs: input.embeddingDurationMs,
+  });
+  const documentId = Number(insert[0].insertId);
+  if (input.chunks.length) {
+    await db.insert(ragChunks).values(
+      input.chunks.map((chunk, ordinal) => ({ documentId, ordinal, ...chunk })),
+    );
+  }
+  return documentId;
+}
+
+export async function listRagDocuments(ownerId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(ragDocuments)
+    .where(ownerId ? eq(ragDocuments.ownerId, ownerId) : undefined)
+    .orderBy(desc(ragDocuments.createdAt));
+}
+
+export async function listSearchableChunks(ownerId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: ragChunks.id,
+      documentId: ragDocuments.id,
+      documentTitle: ragDocuments.fileName,
+      ordinal: ragChunks.ordinal,
+      content: ragChunks.content,
+      embedding: ragChunks.embedding,
+    })
+    .from(ragChunks)
+    .innerJoin(ragDocuments, eq(ragChunks.documentId, ragDocuments.id))
+    .where(ownerId ? and(eq(ragDocuments.ownerId, ownerId), eq(ragDocuments.status, "ready")) : eq(ragDocuments.status, "ready"));
+}

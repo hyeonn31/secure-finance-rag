@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1787131935855,
+      "tag": "0000_unknown_toad_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787132302834,
+      "tag": "0001_motionless_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787132695220,
+      "tag": "0002_glossy_jean_grey",
+      "breakpoints": true
+    }
+  ]
 }

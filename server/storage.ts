@@ -95,3 +95,20 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { url } = (await resp.json()) as { url: string };
   return url;
 }
+
+/** Delete an object before removing its document metadata. This avoids orphaned originals. */
+export async function storageDelete(relKey: string): Promise<void> {
+  const { forgeUrl, forgeKey } = getForgeConfig();
+  const key = normalizeKey(relKey);
+  const presignUrl = new URL("v1/storage/presign/delete", forgeUrl + "/");
+  presignUrl.searchParams.set("path", key);
+  const presignResp = await fetch(presignUrl, { headers: { Authorization: `Bearer ${forgeKey}` } });
+  if (!presignResp.ok) {
+    const msg = await presignResp.text().catch(() => presignResp.statusText);
+    throw new Error(`Storage delete presign failed (${presignResp.status}): ${msg}`);
+  }
+  const { url } = (await presignResp.json()) as { url: string };
+  if (!url) throw new Error("Forge returned empty delete URL");
+  const deleteResp = await fetch(url, { method: "DELETE" });
+  if (!deleteResp.ok) throw new Error(`Storage deletion failed (${deleteResp.status})`);
+}

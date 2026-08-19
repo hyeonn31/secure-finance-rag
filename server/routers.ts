@@ -3,10 +3,11 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { createRagDocument, listRagDocuments, listSearchableChunks } from "./db";
+import { createRagDocument, deleteOwnedRagDocument, getOwnedRagDocument, listRagDocuments, listSearchableChunks } from "./db";
 import { parseFinanceDocument } from "./rag/parser";
 import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
-import { storagePut } from "./storage";
+import { createAsciiStorageKey, getSupportedExtension } from "./rag/storageKey";
+import { storageDelete, storagePut } from "./storage";
 
 const base64FileSchema = z.object({
   fileName: z.string().min(1).max(255),
@@ -31,8 +32,8 @@ export const appRouter = router({
       return {
         stages,
         improvement: buildImprovementGuide(stages),
-        documents: [...DEMO_DOCUMENTS, ...uploaded.map((document) => ({
-          id: String(document.id), title: document.fileName, type: document.fileType.toUpperCase(), size: "암호화 저장", status: document.status.toUpperCase(), chunks: document.chunkCount, score: document.parsingScore, updatedAt: new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(document.updatedAt),
+        documents: [...DEMO_DOCUMENTS.map((document) => ({ ...document, isDeletable: false })), ...uploaded.map((document) => ({
+          id: String(document.id), title: document.fileName, type: document.fileType.toUpperCase(), size: "암호화 저장", status: document.status.toUpperCase(), chunks: document.chunkCount, score: document.parsingScore, updatedAt: new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(document.updatedAt), isDeletable: true,
         }))],
         documentCount: DEMO_DOCUMENTS.length + uploaded.length,
         latestIngest: recent ? { fileName: recent.fileName, parsingScore: recent.parsingScore, parsingDuration: formatDuration(recent.parsingDurationMs), embeddingScore: recent.embeddingScore, embeddingCoverage: recent.embeddingCoverage, embeddingDuration: formatDuration(recent.embeddingDurationMs), chunkCount: recent.chunkCount } : null,
@@ -67,9 +68,8 @@ export const appRouter = router({
     ingest: protectedProcedure.input(base64FileSchema).mutation(async ({ input, ctx }) => {
       const data = Buffer.from(input.contentBase64, "base64");
       if (data.length > 10 * 1024 * 1024) throw new Error("데모 환경에서는 10MB 이하 파일만 업로드할 수 있습니다.");
-      const extension = input.fileName.split(".").pop()?.toLowerCase() ?? "";
-      if (!new Set(["pdf", "docx", "xlsx", "pptx"]).has(extension)) throw new Error("PDF, DOCX, XLSX, PPTX 형식만 지원합니다.");
-      const storageKey = `secure-rag/${ctx.user.id}/${Date.now()}-${input.fileName.replace(/[^0-9a-zA-Z가-힣._-]/g, "_")}`;
+      const extension = getSupportedExtension(input.fileName);
+      const storageKey = createAsciiStorageKey(ctx.user.id, input.fileName);
       const stored = await storagePut(storageKey, data, input.mimeType || "application/octet-stream");
       const parsingStartedAt = performance.now();
       const parsed = await parseFinanceDocument(data, input.fileName);
@@ -96,6 +96,13 @@ export const appRouter = router({
         chunks,
       });
       return { documentId, parser: parsed.parser, sections: parsed.sections, chunkCount: chunks.length, parsingScore, parsingDuration: formatDuration(parsingDurationMs), embeddingScore, embeddingCoverage, embeddingDuration: formatDuration(embeddingDurationMs) };
+    }),
+    deleteDocument: protectedProcedure.input(z.object({ documentId: z.coerce.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const document = await getOwnedRagDocument(input.documentId, ctx.user.id);
+      if (!document) throw new Error("삭제할 문서를 찾을 수 없거나 권한이 없습니다.");
+      await storageDelete(document.storageKey);
+      await deleteOwnedRagDocument(document.id, ctx.user.id);
+      return { success: true, documentId: document.id } as const;
     }),
   }),
 });

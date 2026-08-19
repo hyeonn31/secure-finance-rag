@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --color-background: #F6F7F5;
-  --color-foreground: #152820;
-  --color-primary: #176B48;
-  --color-primary-foreground: #F7FFF8;
-  --color-muted: #EDF1ED;
-  --color-muted-foreground: #5A6C63;
-  --color-border: #DFE5DE;
+  --font-sans: "Inter", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif;
+  --color-background: #F4F6F6;
+  --color-foreground: #14201E;
+  --color-primary: #1B5D43;
+  --color-primary-foreground: #FFFFFF;
+  --color-muted: #EDF1F0;
+  --color-muted-foreground: #61716A;
+  --color-border: #D8E0DD;
   --color-card: #FFFFFF;
-  --color-card-foreground: #152820;
-  --color-secondary: #E8F2EA;
-  --color-secondary-foreground: #173A2C;
-  --color-ring: #1B7A50;
+  --color-card-foreground: #14201E;
+  --color-secondary: #EBF2EE;
+  --color-secondary-foreground: #1F4C3B;
+  --color-ring: #1B5D43;
 }
 
 * { box-sizing: border-box; }
-html { background: #F6F7F5; }
-body { margin: 0; min-width: 320px; font-family: var(--font-sans); background: #F6F7F5; color: #152820; }
+html, body, #root { min-height: 100%; }
+body { margin: 0; min-width: 320px; background: #F4F6F6; color: #14201E; font-family: var(--font-sans); font-feature-settings: "tnum" 1, "ss01" 1; }
 button, input, textarea { font: inherit; }
-::selection { background: #CBEEDB; color: #0C211B; }
-.display-serif { font-family: Georgia, "Times New Roman", serif; letter-spacing: -0.045em; }
-.eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #5F7A69; }
-.score-ring { background: conic-gradient(#1D9A65 calc(var(--score) * 1%), #E4EAE5 0); }
-@media (prefers-reduced-motion: no-preference) { .rise-in { animation: rise .45s cubic-bezier(.23,1,.32,1) both; } @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } } }
+::selection { background: #BFE0CD; color: #10251C; }
+.label-caps { font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: #6B7C74; }
+.data-number { font-variant-numeric: tabular-nums; letter-spacing: -.045em; }
+.hairline { border-color: #D8E0DD; }
+@media (prefers-reduced-motion: no-preference) { .enter { animation: enter .32s cubic-bezier(.23,1,.32,1) both; } @keyframes enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } } }

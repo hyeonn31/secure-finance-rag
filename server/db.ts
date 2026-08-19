@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, ragChunks, ragDocuments, users } from "../drizzle/schema";
+import { InsertUser, ragChunks, ragDemoStates, ragDocuments, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -108,6 +108,18 @@ export async function listSearchableChunks(ownerId?: number) {
     .from(ragChunks)
     .innerJoin(ragDocuments, eq(ragChunks.documentId, ragDocuments.id))
     .where(ownerId ? and(eq(ragDocuments.ownerId, ownerId), eq(ragDocuments.status, "ready")) : eq(ragDocuments.status, "ready"));
+}
+
+export async function listDemoStates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(ragDemoStates);
+}
+
+export async function setDemoState(demoId: string, enabled: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("데모 상태 데이터베이스에 연결할 수 없습니다.");
+  await db.insert(ragDemoStates).values({ demoId, enabled: enabled ? 1 : 0 }).onDuplicateKeyUpdate({ set: { enabled: enabled ? 1 : 0 } });
 }
 
 export async function getOwnedRagDocument(documentId: number, ownerId: number) {

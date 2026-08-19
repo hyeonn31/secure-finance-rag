@@ -3,7 +3,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { createRagDocument, deleteOwnedRagDocument, getOwnedRagDocument, listRagDocuments, listSearchableChunks } from "./db";
+import { createRagDocument, deleteOwnedRagDocument, getOwnedRagDocument, listDemoStates, listRagDocuments, listSearchableChunks, setDemoState } from "./db";
+import { composeSearchCorpus, DEMO_DOCUMENT_IDS, resolveDemoStates } from "./rag/demoState";
 import { parseFinanceDocument } from "./rag/parser";
 import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, calculateEmbeddingScore, calculateParsingScore, calculateRetrievalScore, chunkText, createEmbedding, DEMO_CHUNKS, DEMO_DOCUMENTS, formatDuration, hybridSearch, type SearchChunk } from "./rag/pipeline";
 import { createAsciiStorageKey, getSupportedExtension } from "./rag/storageKey";
@@ -27,15 +28,18 @@ export const appRouter = router({
   rag: router({
     dashboard: publicProcedure.query(async () => {
       const uploaded = await listRagDocuments();
+      const demoStates = resolveDemoStates(await listDemoStates());
+      const demoDocuments = DEMO_DOCUMENTS.map((document) => ({ ...document, isDeletable: false, isDemo: true, enabled: demoStates[document.id], status: demoStates[document.id] ? "READY" : "DISABLED" }));
       const recent = uploaded[0];
       const stages = buildStages(recent ? { parse: recent.parsingScore, embed: recent.embeddingScore } : undefined, recent ? { parsingDurationMs: recent.parsingDurationMs, embeddingDurationMs: recent.embeddingDurationMs, embeddingCoverage: recent.embeddingCoverage } : undefined);
       return {
         stages,
         improvement: buildImprovementGuide(stages),
-        documents: [...DEMO_DOCUMENTS.map((document) => ({ ...document, isDeletable: false })), ...uploaded.map((document) => ({
-          id: String(document.id), title: document.fileName, type: document.fileType.toUpperCase(), size: "암호화 저장", status: document.status.toUpperCase(), chunks: document.chunkCount, score: document.parsingScore, updatedAt: new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(document.updatedAt), isDeletable: true,
+        documents: [...demoDocuments, ...uploaded.map((document) => ({
+          id: String(document.id), title: document.fileName, type: document.fileType.toUpperCase(), size: "암호화 저장", status: document.status.toUpperCase(), chunks: document.chunkCount, score: document.parsingScore, updatedAt: new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(document.updatedAt), isDeletable: true, isDemo: false, enabled: true,
         }))],
-        documentCount: DEMO_DOCUMENTS.length + uploaded.length,
+        documentCount: demoDocuments.filter((document) => document.enabled).length + uploaded.length,
+        demoStates,
         latestIngest: recent ? { fileName: recent.fileName, parsingScore: recent.parsingScore, parsingDuration: formatDuration(recent.parsingDurationMs), embeddingScore: recent.embeddingScore, embeddingCoverage: recent.embeddingCoverage, embeddingDuration: formatDuration(recent.embeddingDurationMs), chunkCount: recent.chunkCount } : null,
         security: { network: "사내망 전용", contextPolicy: "Top-3 후보 청크만 전달", storage: "S3 암호화 저장" },
       };
@@ -43,6 +47,7 @@ export const appRouter = router({
     search: publicProcedure.input(z.object({ query: z.string().min(2).max(400) })).mutation(async ({ input }) => {
       const retrieveStartedAt = performance.now();
       const uploaded = await listSearchableChunks();
+      const demoStates = resolveDemoStates(await listDemoStates());
       const privateChunks: SearchChunk[] = uploaded.map((chunk) => ({
         id: chunk.id,
         documentTitle: chunk.documentTitle,
@@ -50,7 +55,7 @@ export const appRouter = router({
         content: chunk.content,
         embedding: chunk.embedding,
       }));
-      const candidates = hybridSearch(input.query, [...DEMO_CHUNKS, ...privateChunks], 3);
+      const candidates = hybridSearch(input.query, composeSearchCorpus(DEMO_CHUNKS, privateChunks, demoStates), 3);
       const retrievalDurationMs = performance.now() - retrieveStartedAt;
       const retrievalScore = calculateRetrievalScore(candidates);
       const generateStartedAt = performance.now();
@@ -103,6 +108,11 @@ export const appRouter = router({
       await storageDelete(document.storageKey);
       await deleteOwnedRagDocument(document.id, ctx.user.id);
       return { success: true, documentId: document.id } as const;
+    }),
+    setDemoEnabled: protectedProcedure.input(z.object({ demoId: z.enum(DEMO_DOCUMENT_IDS), enabled: z.boolean() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("데모 자료 상태는 관리자만 변경할 수 있습니다.");
+      await setDemoState(input.demoId, input.enabled);
+      return { success: true, ...input } as const;
     }),
   }),
 });

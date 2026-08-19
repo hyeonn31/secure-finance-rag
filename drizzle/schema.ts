@@ -42,7 +42,14 @@ export const ragChunks = mysqlTable("rag_chunks", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const ragDemoStates = mysqlTable("rag_demo_states", {
+  demoId: varchar("demoId", { length: 64 }).primaryKey(),
+  enabled: int("enabled").default(1).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type RagDocument = typeof ragDocuments.$inferSelect;
 export type RagChunk = typeof ragChunks.$inferSelect;
+export type RagDemoState = typeof ragDemoStates.$inferSelect;

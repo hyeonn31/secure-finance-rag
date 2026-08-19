@@ -13,7 +13,7 @@ import { toast } from "sonner";
 type PipelineStage = { id: string; title: string; subtitle: string; score: number; duration: string; status: "ready" | "attention"; signal: string; metric: string };
 type SearchResponse = { answer: string; groundedness: number; candidates: Array<{ id: string | number; documentTitle: string; ordinal: number; content: string; keywordScore: number; semanticScore: number; hybridScore: number }>; stages: PipelineStage[]; improvement: { stageTitle: string; score: number; target: number; rationale: string; actions: string[] }; timing: { retrieve: string; generate: string; total: string } };
 
-const demoQuestions = ["시장리스크 한도 초과 시 보고 절차를 알려줘", "고위험 기업여신 예외 승인에는 무엇이 필요한가요?", "이상거래가 탐지되면 어떤 조치를 해야 하나요?"];
+const demoQuestions = ["시장리스크 한도 초과 시 보고 절차를 알려줘", "고위험 기업여신 예외 승인에는 무엇이 필요한가요?", "증여세 납세의무의 성립시기는 언제인가요?", "이상거래가 탐지되면 어떤 조치를 해야 하나요?"];
 const fallbackStages: PipelineStage[] = [
   { id: "parse", title: "Parsing & chunking", subtitle: "문서 구조 추출", score: 94, duration: "1.8s", status: "ready", signal: "텍스트 회수율 · 청크 경계", metric: "데모 기준선" },
   { id: "embed", title: "Embedding index", subtitle: "벡터 품질 검증", score: 89, duration: "2.4s", status: "attention", signal: "벡터 커버리지 · 분산", metric: "커버리지 100%" },

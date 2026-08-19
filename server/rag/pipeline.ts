@@ -23,11 +23,28 @@ export type SearchChunk = {
 
 const DIMENSION = 64;
 const FINANCE_STOPWORDS = new Set(["및", "의", "을", "를", "은", "는", "이", "가", "에", "와", "과", "으로", "에서", "대한", "관련", "기준", "관리"]);
+const KOREAN_PARTICLE_SUFFIXES = ["으로부터", "에게서", "에서는", "으로", "에서", "에게", "까지", "부터", "처럼", "보다", "라도", "에는", "의", "은", "는", "이", "가", "을", "를", "와", "과", "에", "로", "도", "만"];
+const DOMAIN_SYNONYMS: Record<string, string[]> = {
+  "증여": ["증여세", "증여재산"],
+  "증여세": ["증여", "증여재산"],
+  "납세": ["납세의무", "납부의무", "과세요건"],
+  "납부": ["납세의무", "납부의무"],
+  "의무": ["납세의무", "납부의무"],
+  "책임": ["납세의무", "납부의무"],
+  "언제": ["성립시기", "성립", "취득시점"],
+  "발생": ["성립시기", "성립", "취득시점"],
+  "시점": ["성립시기", "취득시점"],
+  "성립": ["성립시기", "과세요건"],
+  "여신": ["대출", "신용", "심사"],
+  "대출": ["여신", "신용"],
+  "이상거래": ["의심거래", "에스컬레이션"],
+};
 
 export const DEMO_DOCUMENTS = [
   { id: "demo-risk", title: "2025년 1분기 시장리스크 관리 보고서", type: "PDF", size: "2.4 MB", status: "READY", chunks: 24, score: 94, updatedAt: "오늘 09:12" },
   { id: "demo-credit", title: "기업여신 심사 및 승인 기준", type: "DOCX", size: "1.8 MB", status: "READY", chunks: 18, score: 91, updatedAt: "어제 16:45" },
   { id: "demo-control", title: "내부통제 운영규정 및 이상거래 대응", type: "PPTX", size: "4.1 MB", status: "READY", chunks: 31, score: 88, updatedAt: "2026.08.14" },
+  { id: "demo-tax", title: "증여세 신고 및 납세의무 실무 안내", type: "PDF", size: "1.2 MB", status: "READY", chunks: 16, score: 93, updatedAt: "2026.08.19" },
 ] as const;
 
 const demoRawChunks: Omit<SearchChunk, "embedding">[] = [
@@ -73,6 +90,20 @@ const demoRawChunks: Omit<SearchChunk, "embedding">[] = [
     tags: ["접근권한", "모니터링"],
     content: "중요 정보 접근권한은 최소권한 원칙에 따라 부여하며 분기별로 적정성을 재검토한다. 권한 변경과 해지 이력은 감사 추적이 가능하도록 보관한다.",
   },
+  {
+    id: "tax-01",
+    documentTitle: "증여세 신고 및 납세의무 실무 안내",
+    ordinal: 2,
+    tags: ["증여세", "납세의무", "성립시기"],
+    content: "증여세의 납세의무는 증여로 재산을 취득하는 때 성립한다. 실무 검토 시에는 증여일, 재산 취득일, 계약 내용과 등기 여부 등 거래 사실관계를 함께 확인한다. 이 안내는 내부 교육용 요약이며 개별 거래의 세무 판단은 담당 부서 검토가 필요하다.",
+  },
+  {
+    id: "tax-02",
+    documentTitle: "증여세 신고 및 납세의무 실무 안내",
+    ordinal: 7,
+    tags: ["증여재산", "신고", "수증자"],
+    content: "증여재산에 대한 신고 검토는 수증자, 증여재산의 종류와 취득 시점을 기준으로 자료를 정리한다. 신고기한과 과세가액 산정에 영향을 주는 예외 사항은 최신 세법과 내부 세무 검토 절차에 따라 별도로 확인한다.",
+  },
 ];
 
 export const DEMO_CHUNKS: SearchChunk[] = demoRawChunks.map((chunk) => ({ ...chunk, embedding: createEmbedding(chunk.content) }));
@@ -83,12 +114,23 @@ function hash(value: string) {
   return result >>> 0;
 }
 
+function expandKoreanToken(token: string) {
+  const suffix = KOREAN_PARTICLE_SUFFIXES.find((candidate) => token.endsWith(candidate) && token.length - candidate.length >= 2);
+  const normalized = suffix ? token.slice(0, -suffix.length) : token;
+  return normalized === token ? [token] : [token, normalized];
+}
+
 export function tokenize(value: string) {
   return value
     .toLowerCase()
     .replace(/[^0-9a-z가-힣]+/gi, " ")
     .split(/\s+/)
+    .flatMap(expandKoreanToken)
     .filter((word) => word.length > 1 && !FINANCE_STOPWORDS.has(word));
+}
+
+export function expandDomainTerms(tokens: string[]) {
+  return Array.from(new Set(tokens.flatMap((token) => [token, ...(DOMAIN_SYNONYMS[token] ?? [])])));
 }
 
 export function createEmbedding(text: string): number[] {
@@ -157,7 +199,7 @@ export function calculateEmbeddingCoverage(chunks: Array<{ embedding: number[] }
 }
 
 export function hybridSearch(query: string, chunks: SearchChunk[], limit = 3) {
-  const queryTokens = tokenize(query);
+  const queryTokens = expandDomainTerms(tokenize(query));
   const queryEmbedding = createEmbedding(query);
   const documentFrequency = new Map<string, number>();
   chunks.forEach((chunk) => {

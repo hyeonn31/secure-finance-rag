@@ -7,6 +7,7 @@ const chunkPrefixToDocumentId: Record<string, DemoDocumentId> = {
   risk: "demo-risk",
   credit: "demo-credit",
   control: "demo-control",
+  tax: "demo-tax",
 };
 
 export function resolveDemoStates(rows: Array<{ demoId: string; enabled: number }> = []) {

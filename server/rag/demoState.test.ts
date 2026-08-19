@@ -4,13 +4,13 @@ import { composeSearchCorpus, filterActiveDemoChunks, resolveDemoStates } from "
 
 describe("demo document state", () => {
   it("defaults all demo documents to enabled", () => {
-    expect(resolveDemoStates()).toEqual({ "demo-risk": true, "demo-credit": true, "demo-control": true });
+    expect(resolveDemoStates()).toEqual({ "demo-risk": true, "demo-credit": true, "demo-control": true, "demo-tax": true });
   });
 
   it("excludes disabled demo document chunks from retrieval candidates", () => {
     const states = resolveDemoStates([{ demoId: "demo-risk", enabled: 0 }]);
     const active = filterActiveDemoChunks(DEMO_CHUNKS, states);
-    expect(active).toHaveLength(4);
+    expect(active).toHaveLength(6);
     expect(active.some((chunk) => String(chunk.id).startsWith("risk-"))).toBe(false);
   });
 

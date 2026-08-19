@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, filterGroundedCandidates, hybridSearch, DEMO_CHUNKS } from "./pipeline";
+import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, expandDomainTerms, filterGroundedCandidates, hybridSearch, tokenize, DEMO_CHUNKS } from "./pipeline";
 
 describe("금융 RAG 파이프라인", () => {
   it("문장을 겹침을 갖는 검색 단위로 분할한다", () => {
@@ -35,5 +35,20 @@ describe("금융 RAG 파이프라인", () => {
     const candidates = filterGroundedCandidates(hybridSearch("이탈리아 피자 도우 발효 레시피", chunks, 3));
     expect(candidates).toHaveLength(0);
     expect(buildGroundedAnswer("이탈리아 피자 도우 발효 레시피", candidates).groundedness).toBe(0);
+  });
+
+  it("조사가 붙은 증여세 질의를 세무 데모 청크와 연결한다", () => {
+    const candidates = filterGroundedCandidates(hybridSearch("납세의무에서 증여세의 성립시기는 뭐였지", DEMO_CHUNKS, 3));
+    expect(candidates).not.toHaveLength(0);
+    expect(candidates[0].documentTitle).toContain("증여세");
+    expect(buildGroundedAnswer("납세의무에서 증여세의 성립시기는 뭐였지", candidates).groundedness).toBeGreaterThan(0);
+  });
+
+  it("동의어로 표현된 세무 질의도 증여세 근거를 회수한다", () => {
+    const expanded = expandDomainTerms(tokenize("증여로 세금 납부 책임은 언제 발생해"));
+    expect(expanded).toContain("증여세");
+    expect(expanded).toContain("성립시기");
+    const candidates = filterGroundedCandidates(hybridSearch("증여로 세금 납부 책임은 언제 발생해", DEMO_CHUNKS, 3));
+    expect(candidates[0]?.documentTitle).toContain("증여세");
   });
 });

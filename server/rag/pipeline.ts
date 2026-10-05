@@ -23,6 +23,10 @@ export type SearchChunk = {
 
 const DIMENSION = 64;
 const FINANCE_STOPWORDS = new Set(["및", "의", "을", "를", "은", "는", "이", "가", "에", "와", "과", "으로", "에서", "대한", "관련", "기준", "관리"]);
+// Words that frame a question ("what is the procedure", "what should I do") rather than
+// name its subject. They appear in unrelated documents too, so they never count as
+// evidence that a chunk is about the question.
+const QUESTION_FRAME_WORDS = new Set(["절차", "조치", "방법", "무엇", "어떤", "어떻게", "알려줘", "알려", "필요", "필요한가요", "해야", "하나요", "인가요", "뭐였지", "있나요", "되나요", "경우"]);
 const KOREAN_PARTICLE_SUFFIXES = ["으로부터", "에게서", "에서는", "으로", "에서", "에게", "까지", "부터", "처럼", "보다", "라도", "에는", "의", "은", "는", "이", "가", "을", "를", "와", "과", "에", "로", "도", "만"];
 const DOMAIN_SYNONYMS: Record<string, string[]> = {
   "증여": ["증여세", "증여재산"],
@@ -133,6 +137,46 @@ export function expandDomainTerms(tokens: string[]) {
   return Array.from(new Set(tokens.flatMap((token) => [token, ...(DOMAIN_SYNONYMS[token] ?? [])])));
 }
 
+const VERB_ENDING_STARTS = ["하", "한", "할", "함", "해", "했", "되", "된", "될", "됨", "돼", "됐", "인", "입", "이다"];
+
+function isKoreanEnding(rest: string) {
+  return KOREAN_PARTICLE_SUFFIXES.includes(rest) || VERB_ENDING_STARTS.some((start) => rest.startsWith(start));
+}
+
+/**
+ * Korean attaches endings to stems ("탐지되면", "에스컬레이션한다"). Two tokens match when
+ * they are equal, or one is the other plus a particle or verb ending of at most three
+ * syllables. A plain prefix is not enough: "이상" (as in "월 1회 이상") must not match
+ * "이상거래", and "한도" must not match "한도관리협의체".
+ */
+export function termsMatch(left: string, right: string) {
+  if (left === right) return true;
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+  if (shorter.length < 2 || longer.length - shorter.length > 3 || !longer.startsWith(shorter)) return false;
+  return isKoreanEnding(longer.slice(shorter.length));
+}
+
+/**
+ * Splits a question into the concepts it asks about. Each concept is one word of the
+ * question plus its particle-stripped form and domain synonyms, so "증여세" and
+ * "증여재산" count as the same concept instead of two separate hits.
+ */
+export function extractQueryConcepts(query: string): string[][] {
+  const concepts: string[][] = [];
+  for (const word of query.toLowerCase().replace(/[^0-9a-z가-힣]+/gi, " ").split(/\s+/)) {
+    const forms = expandKoreanToken(word).filter((form) => form.length > 1 && !FINANCE_STOPWORDS.has(form));
+    if (!forms.length || forms.some((form) => QUESTION_FRAME_WORDS.has(form))) continue;
+    const terms = new Set(forms);
+    for (const form of forms) {
+      for (const [key, synonyms] of Object.entries(DOMAIN_SYNONYMS)) {
+        if (termsMatch(form, key)) [key, ...synonyms].forEach((term) => terms.add(term));
+      }
+    }
+    concepts.push(Array.from(terms));
+  }
+  return concepts;
+}
+
 export function createEmbedding(text: string): number[] {
   const vector = Array.from({ length: DIMENSION }, () => 0);
   const tokens = tokenize(text);
@@ -199,43 +243,48 @@ export function calculateEmbeddingCoverage(chunks: Array<{ embedding: number[] }
 }
 
 export function hybridSearch(query: string, chunks: SearchChunk[], limit = 3) {
-  const queryTokens = expandDomainTerms(tokenize(query));
+  const concepts = extractQueryConcepts(query);
+  const queryTokens = Array.from(new Set(concepts.flat()));
   const queryEmbedding = createEmbedding(query);
-  const documentFrequency = new Map<string, number>();
-  chunks.forEach((chunk) => {
-    const unique = new Set(tokenize(chunk.content));
-    unique.forEach((token) => documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1));
-  });
-  const averageLength = chunks.reduce((sum, chunk) => sum + tokenize(chunk.content).length, 0) / Math.max(chunks.length, 1);
+  const chunkTerms = chunks.map((chunk) => tokenize(chunk.content));
+  const countMatches = (terms: string[], queryTerm: string) => terms.filter((term) => termsMatch(term, queryTerm)).length;
+  const documentFrequency = new Map(queryTokens.map((term) => [term, chunkTerms.filter((terms) => countMatches(terms, term) > 0).length]));
+  const averageLength = chunkTerms.reduce((sum, terms) => sum + terms.length, 0) / Math.max(chunks.length, 1);
   return chunks
-    .map((chunk) => {
-      const terms = tokenize(chunk.content);
-      const frequency = new Map<string, number>();
-      terms.forEach((term) => frequency.set(term, (frequency.get(term) ?? 0) + 1));
+    .map((chunk, index) => {
+      const terms = chunkTerms[index];
       const bm25Raw = queryTokens.reduce((sum, term) => {
-        const tf = frequency.get(term) ?? 0;
-        const idf = Math.log(1 + (chunks.length - (documentFrequency.get(term) ?? 0) + 0.5) / ((documentFrequency.get(term) ?? 0) + 0.5));
+        const tf = countMatches(terms, term);
+        const df = documentFrequency.get(term) ?? 0;
+        const idf = Math.log(1 + (chunks.length - df + 0.5) / (df + 0.5));
         return sum + idf * ((tf * 2.1) / (tf + 1.2 * (1 - 0.75 + 0.75 * (terms.length / Math.max(averageLength, 1)))));
       }, 0);
       const keywordScore = Math.min(100, Math.round((bm25Raw / Math.max(queryTokens.length, 1)) * 60));
       const semanticScore = Math.max(0, Math.min(100, Math.round(cosineSimilarity(queryEmbedding, chunk.embedding) * 100)));
-      const matchedTerms = queryTokens.filter((term) => frequency.has(term));
-      const lexicalMatchCount = new Set(matchedTerms).size;
+      const matchedTerms = queryTokens.filter((term) => countMatches(terms, term) > 0);
+      // Distinct question concepts this chunk covers; synonyms of one concept count once.
+      const lexicalMatchCount = concepts.filter((concept) => concept.some((term) => matchedTerms.includes(term))).length;
       const hybridScore = Math.round(keywordScore * 0.46 + semanticScore * 0.54);
-      return { ...chunk, keywordScore, semanticScore, hybridScore, matchedTerms: Array.from(new Set(matchedTerms)), lexicalMatchCount };
+      return { ...chunk, keywordScore, semanticScore, hybridScore, matchedTerms, lexicalMatchCount, conceptCount: concepts.length };
     })
-    .sort((left, right) => right.hybridScore - left.hybridScore)
+    // Chunks sharing no concept with the question rank last: with a 64-dim hash embedding,
+    // their semantic score is collision noise and must not push real matches out of the top k.
+    .sort((left, right) => Number(right.lexicalMatchCount > 0) - Number(left.lexicalMatchCount > 0) || right.hybridScore - left.hybridScore)
     .slice(0, limit);
 }
 
 /**
- * A hash-based demo embedding can produce accidental similarity for unrelated
- * text. Require an observable lexical signal before any chunk can reach
- * generation. In production this gate should be calibrated against a labelled
- * evaluation set alongside the embedding reranker.
+ * Only chunks with real lexical evidence reach generation, and a supporting chunk must
+ * cover at least half as many question concepts as the best one. This drops chunks that
+ * merely share one incidental word with the question (e.g. a tax guide matching
+ * "한도" in a market-risk question). In production the ratio should be calibrated
+ * against a labelled evaluation set alongside an embedding reranker.
  */
 export function filterGroundedCandidates(candidates: ReturnType<typeof hybridSearch>) {
-  return candidates.filter((candidate) => candidate.lexicalMatchCount > 0 && candidate.keywordScore >= 4 && candidate.hybridScore >= 8);
+  const best = Math.max(0, ...candidates.map((candidate) => candidate.lexicalMatchCount));
+  return candidates.filter(
+    (candidate) => candidate.lexicalMatchCount > 0 && candidate.lexicalMatchCount * 2 >= best && candidate.keywordScore >= 4 && candidate.hybridScore >= 8,
+  );
 }
 
 export function calculateRetrievalScore(results: Array<{ hybridScore: number }>) {

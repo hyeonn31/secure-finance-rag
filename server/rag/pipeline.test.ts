@@ -1,5 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, expandDomainTerms, filterGroundedCandidates, hybridSearch, tokenize, DEMO_CHUNKS } from "./pipeline";
+import { buildGroundedAnswer, buildImprovementGuide, buildStages, calculateEmbeddingCoverage, chunkText, createEmbedding, expandDomainTerms, extractQueryConcepts, filterGroundedCandidates, hybridSearch, termsMatch, tokenize, DEMO_CHUNKS } from "./pipeline";
+
+const groundedTitles = (query: string) => filterGroundedCandidates(hybridSearch(query, DEMO_CHUNKS, 3)).map((candidate) => candidate.documentTitle);
+
+describe("근거 후보 정밀도", () => {
+  // 화면의 데모 질문 4개. 이전에는 3개에서 다른 주제의 문서가 근거로 섞였다.
+  const demoQuestions: Array<[string, string]> = [
+    ["시장리스크 한도 초과 시 보고 절차를 알려줘", "시장리스크"],
+    ["고위험 기업여신 예외 승인에는 무엇이 필요한가요?", "기업여신"],
+    ["증여세 납세의무의 성립시기는 언제인가요?", "증여세"],
+    ["이상거래가 탐지되면 어떤 조치를 해야 하나요?", "이상거래"],
+  ];
+  for (const [query, topic] of demoQuestions) {
+    it(`'${query}'의 근거는 모두 '${topic}' 문서에서만 나온다`, () => {
+      const titles = groundedTitles(query);
+      expect(titles.length).toBeGreaterThan(0);
+      expect(titles.every((title) => title.includes(topic))).toBe(true);
+    });
+  }
+
+  it("'절차', '조치' 같은 질문 표현 단어는 근거 개념으로 세지 않는다", () => {
+    const concepts = extractQueryConcepts("시장리스크 한도 초과 시 보고 절차를 알려줘").flat();
+    expect(concepts).not.toContain("절차");
+    expect(concepts).not.toContain("알려줘");
+    expect(concepts).toContain("시장리스크");
+  });
+
+  it("어미가 붙은 단어는 맞추되, 다른 명사의 앞부분과는 맞추지 않는다", () => {
+    expect(termsMatch("탐지되면", "탐지")).toBe(true);
+    expect(termsMatch("에스컬레이션한다", "에스컬레이션")).toBe(true);
+    expect(termsMatch("이상", "이상거래")).toBe(false);
+    expect(termsMatch("한도", "한도관리협의체")).toBe(false);
+  });
+});
 
 describe("금융 RAG 파이프라인", () => {
   it("문장을 겹침을 갖는 검색 단위로 분할한다", () => {

@@ -10,6 +10,7 @@ export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
     hmr: { server },
+    // Host filtering happens earlier in the Express hostGuard middleware.
     allowedHosts: true as const,
   };
 

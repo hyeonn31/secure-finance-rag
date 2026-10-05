@@ -1,55 +1,46 @@
-import { int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+const now = () => new Date();
+
+export const ragDocuments = sqliteTable("rag_documents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ownerId: integer("ownerId").notNull(),
+  fileName: text("fileName").notNull(),
+  fileType: text("fileType").notNull(),
+  storageKey: text("storageKey").notNull(),
+  status: text("status", { enum: ["uploaded", "processing", "ready", "failed"] }).default("uploaded").notNull(),
+  extractedCharacters: integer("extractedCharacters").default(0).notNull(),
+  chunkCount: integer("chunkCount").default(0).notNull(),
+  parsingScore: integer("parsingScore").default(0).notNull(),
+  parsingDurationMs: integer("parsingDurationMs").default(0).notNull(),
+  embeddingScore: integer("embeddingScore").default(0).notNull(),
+  embeddingCoverage: integer("embeddingCoverage").default(0).notNull(),
+  embeddingDurationMs: integer("embeddingDurationMs").default(0).notNull(),
+  createdAt: integer("createdAt", { mode: "timestamp_ms" }).$defaultFn(now).notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).$defaultFn(now).$onUpdateFn(now).notNull(),
 });
 
-export const ragDocuments = mysqlTable("rag_documents", {
-  id: int("id").autoincrement().primaryKey(),
-  ownerId: int("ownerId").notNull(),
-  fileName: varchar("fileName", { length: 255 }).notNull(),
-  fileType: varchar("fileType", { length: 32 }).notNull(),
-  storageKey: varchar("storageKey", { length: 512 }).notNull(),
-  storageUrl: varchar("storageUrl", { length: 1024 }).notNull(),
-  status: mysqlEnum("status", ["uploaded", "processing", "ready", "failed"]).default("uploaded").notNull(),
-  extractedCharacters: int("extractedCharacters").default(0).notNull(),
-  chunkCount: int("chunkCount").default(0).notNull(),
-  parsingScore: int("parsingScore").default(0).notNull(),
-  parsingDurationMs: int("parsingDurationMs").default(0).notNull(),
-  embeddingScore: int("embeddingScore").default(0).notNull(),
-  embeddingCoverage: int("embeddingCoverage").default(0).notNull(),
-  embeddingDurationMs: int("embeddingDurationMs").default(0).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+export const ragChunks = sqliteTable(
+  "rag_chunks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    documentId: integer("documentId").notNull().references(() => ragDocuments.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    content: text("content").notNull(),
+    charStart: integer("charStart").notNull(),
+    charEnd: integer("charEnd").notNull(),
+    embedding: text("embedding", { mode: "json" }).$type<number[]>().notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).$defaultFn(now).notNull(),
+  },
+  (table) => [index("rag_chunks_document_idx").on(table.documentId)],
+);
+
+export const ragDemoStates = sqliteTable("rag_demo_states", {
+  demoId: text("demoId").primaryKey(),
+  enabled: integer("enabled").default(1).notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).$defaultFn(now).$onUpdateFn(now).notNull(),
 });
 
-export const ragChunks = mysqlTable("rag_chunks", {
-  id: int("id").autoincrement().primaryKey(),
-  documentId: int("documentId").notNull(),
-  ordinal: int("ordinal").notNull(),
-  content: text("content").notNull(),
-  charStart: int("charStart").notNull(),
-  charEnd: int("charEnd").notNull(),
-  embedding: json("embedding").$type<number[]>().notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export const ragDemoStates = mysqlTable("rag_demo_states", {
-  demoId: varchar("demoId", { length: 64 }).primaryKey(),
-  enabled: int("enabled").default(1).notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
 export type RagDocument = typeof ragDocuments.$inferSelect;
 export type RagChunk = typeof ragChunks.$inferSelect;
 export type RagDemoState = typeof ragDemoStates.$inferSelect;

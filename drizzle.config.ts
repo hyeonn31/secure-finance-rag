@@ -1,15 +1,10 @@
 import { defineConfig } from "drizzle-kit";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
-}
-
+// The app creates its tables on startup (server/repo/sqliteRepository.ts).
+// This config is only for inspecting the local database with `pnpm db:studio`.
 export default defineConfig({
   schema: "./drizzle/schema.ts",
-  out: "./drizzle",
-  dialect: "mysql",
-  dbCredentials: {
-    url: connectionString,
-  },
+  out: "./drizzle/migrations",
+  dialect: "sqlite",
+  dbCredentials: { url: process.env.DB_PATH ?? "./data/rag.db" },
 });

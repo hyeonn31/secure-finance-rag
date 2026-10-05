@@ -1,10 +1,14 @@
+import path from "node:path";
+
+const dataDir = path.resolve(process.env.DATA_DIR ?? "./data");
+
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  host: process.env.HOST ?? "127.0.0.1",
+  port: parseInt(process.env.PORT ?? "3000", 10),
+  // Extra Host header names to accept besides localhost, e.g. "rag.internal" on an intranet server.
+  allowedHosts: (process.env.ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim()).filter(Boolean),
+  dataDir,
+  storageDir: path.resolve(process.env.STORAGE_DIR ?? path.join(dataDir, "uploads")),
+  dbPath: process.env.DB_PATH ?? path.join(dataDir, "rag.db"),
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 };

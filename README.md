@@ -18,6 +18,10 @@ pnpm dev
 
 Windows에서는 Python이 `python` 명령으로 실행되는 것을 기본으로 합니다. `py`로만 실행된다면 `.env`에 `PYTHON=py`를 넣어 주세요. poppler는 `winget install oschwartz10612.Poppler` 같은 방법으로 설치할 수 있습니다.
 
+Windows 11에서 테스트 25개가 모두 통과하고 서버가 뜬 화면입니다.
+
+![Windows에서 pnpm test 통과 후 pnpm dev로 서버를 실행한 화면](docs/images/local-run-windows.png)
+
 브라우저에서 http://localhost:3000 을 열면 됩니다. 별도 설정 없이 바로 동작하고, 처음 실행할 때 `data/` 폴더에 DB 파일(`rag.db`)과 업로드 저장소가 만들어집니다.
 
 배포용 빌드는 `pnpm build && pnpm start`, 테스트는 `pnpm test`, 타입 검사는 `pnpm check`입니다. 설정을 바꾸고 싶으면 `.env.example`을 `.env`로 복사해서 고치면 됩니다.

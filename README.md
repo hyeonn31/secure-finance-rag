@@ -6,12 +6,17 @@
 
 ## 실행
 
-Node.js 22 이상과 pnpm이 필요합니다. PDF를 올리려면 `pdftotext`(poppler-utils)도 설치되어 있어야 합니다.
+Node.js 22 이상, pnpm, Python 3가 필요합니다. PDF를 올리려면 `pdftotext`(poppler)도 PATH에 있어야 합니다. DOCX·XLSX·PPTX는 Python만 있으면 됩니다.
 
 ```bash
+corepack enable        # pnpm 활성화 (Windows는 관리자 권한 터미널에서)
+git clone https://github.com/hyeonn31/secure-finance-rag.git
+cd secure-finance-rag
 pnpm install
 pnpm dev
 ```
+
+Windows에서는 Python이 `python` 명령으로 실행되는 것을 기본으로 합니다. `py`로만 실행된다면 `.env`에 `PYTHON=py`를 넣어 주세요. poppler는 `winget install oschwartz10612.Poppler` 같은 방법으로 설치할 수 있습니다.
 
 브라우저에서 http://localhost:3000 을 열면 됩니다. 별도 설정 없이 바로 동작하고, 처음 실행할 때 `data/` 폴더에 DB 파일(`rag.db`)과 업로드 저장소가 만들어집니다.
 
